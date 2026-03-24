@@ -1,40 +1,24 @@
-export const PLANS = {
-    FREE: 'free',
-    STANDARD: 'standard',
-    PRO: 'pro',
-} as const;
-
-export type PlanType = typeof PLANS[keyof typeof PLANS];
-
-export interface PlanLimits {
-    maxBooks: number;
-    maxSessionsPerMonth: number;
-    maxDurationPerSession: number; // in minutes
-    hasSessionHistory: boolean;
-}
-
-export const PLAN_LIMITS: Record<PlanType, PlanLimits> = {
-    [PLANS.FREE]: {
-        maxBooks: 1,
-        maxSessionsPerMonth: 5,
-        maxDurationPerSession: 5,
-        hasSessionHistory: false,
-    },
-    [PLANS.STANDARD]: {
-        maxBooks: 10,
-        maxSessionsPerMonth: 100,
-        maxDurationPerSession: 15,
-        hasSessionHistory: true,
-    },
-    [PLANS.PRO]: {
-        maxBooks: 100,
-        maxSessionsPerMonth: Infinity,
-        maxDurationPerSession: 60,
-        hasSessionHistory: true,
-    },
+// Define exactly what each tier gets
+export const PLAN_LIMITS = {
+  free: { 
+    maxBooks: 1, 
+    maxSessionsPerMonth: 5, 
+    maxSessionMinutes: 5 
+  },
+  standard: { 
+    maxBooks: 10, 
+    maxSessionsPerMonth: 100, 
+    maxSessionMinutes: 15 
+  },
+  pro: { 
+    maxBooks: 100, 
+    maxSessionsPerMonth: Infinity, 
+    maxSessionMinutes: 60 
+  },
 };
 
-export const getCurrentBillingPeriodStart = (): Date => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+// Helper to track when their monthly limit resets
+export const getCurrentBillingPeriodStart = () => {
+  const date = new Date();
+  return new Date(date.getFullYear(), date.getMonth(), 1);
 };

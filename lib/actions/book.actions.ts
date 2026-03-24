@@ -2,78 +2,85 @@
 
 import { connectToDatabase } from "@/database/mongoose";
 import Book from "@/database/models/book.model";
-import { revalidatePath } from "next/cache";
+import BookSegment from "@/database/models/book-segment.model";
+import { getPlanLimits } from "../subscription.server";
 
-// A quick helper to turn MongoDB objects into regular JavaScript objects
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const serializeData = (data: any) => JSON.parse(JSON.stringify(data));
 
-// A quick helper to create a URL-friendly slug (e.g., "Clean Code" -> "clean-code")
-const generateSlug = (title: string) => {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)+/g, '');
-};
-
-export async function createBook(bookData: {
-  clerkId: string;
-  title: string;
-  author: string;
-  persona: string;
-  fileUrl: string;
-  fileBlobKey: string;
-  coverUrl?: string;
-  fileSize: number;
-}) {
-  try {
-    await connectToDatabase();
-
-    const slug = generateSlug(bookData.title);
-
-    // Check if the book already exists to prevent duplicates
-    const existingBook = await Book.findOne({ slug });
-    if (existingBook) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function createBook(bookData: any) { 
+  try {    
+    // 1. Get their plan limits
+    const limits = await getPlanLimits();
+    
+    // 2. Count how many books they already have
+    const userBookCount = await Book.countDocuments({ clerkId: bookData.clerkId });
+    
+    // 3. THE LOCK: Block them if they hit their limit!
+    if (userBookCount >= limits.maxBooks) {
       return { 
-        success: true, 
-        alreadyExists: true, 
-        data: serializeData(existingBook) 
+        success: false, 
+        error: "You have reached your plan's book upload limit.",
+        code: "LIMIT_REACHED" 
       };
     }
 
-    // Create the new book in the database
-    const newBook = await Book.create({
-      ...bookData,
-      slug,
-      totalSegments: 0,
-    });
-
-    // Tell Next.js to refresh the homepage so the new book shows up!
-    revalidatePath("/");
-
-    return { 
-      success: true, 
-      data: serializeData(newBook) 
-    };
-
+    // 4. Generate a URL-friendly slug
+    const slug = bookData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
+    
+    // 5. Save the book
+    const newBook = await Book.create({ ...bookData, slug });
+    
+    return { success: true, data: serializeData(newBook) };
   } catch (error) {
     console.error("Error creating book:", error);
-    return { 
-      success: false, 
-      error: "Failed to create book in database" 
-    };
+    return { success: false, error: "Failed to create book in database." };
   }
 }
-// Add this to the bottom of your book.actions.ts file
+
 export async function getAllBooks() {
   try {
     await connectToDatabase();
-    
-    // Fetch all books and sort them by newest first (-1)
     const books = await Book.find().sort({ createdAt: -1 }).lean();
-    
-    return { 
-      success: true, 
-      data: serializeData(books) 
-    };
+    return { success: true, data: serializeData(books) };
   } catch (error) {
     console.error("Error fetching books:", error);
     return { success: false, data: [] };
+  }
+}
+
+export async function getBookBySlug(slug: string) {
+  try {
+    await connectToDatabase();
+    const book = await Book.findOne({ slug }).lean();
+    if (!book) return { success: false, error: "Book not found" };
+    return { success: true, data: serializeData(book) };
+  } catch (error) {
+    console.error("Error fetching single book:", error);
+    return { success: false, error: "Failed to fetch book details" };
+  }
+}
+
+export async function searchBookSegments(bookId: string, query: string) {
+  try {
+    await connectToDatabase();
+    let segments = await BookSegment.find(
+      { bookId, $text: { $search: query } },
+      { score: { $meta: "textScore" } }
+    ).sort({ score: { $meta: "textScore" } }).limit(3).lean();
+
+    if (!segments || segments.length === 0) {
+      if (query && query.length > 3) {
+        segments = await BookSegment.find({
+          bookId,
+          content: { $regex: query, $options: "i" }
+        }).limit(3).lean();
+      }
+    }
+    return { success: true, data: serializeData(segments) };
+  } catch (error) {
+    console.error("Error searching segments:", error);
+    return { success: false, error: "Failed to search book segments" };
   }
 }
