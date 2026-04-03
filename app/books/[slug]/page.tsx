@@ -1,58 +1,76 @@
-import Navbar from "@/components/Navbar";
 import { getBookBySlug } from "@/lib/actions/book.actions";
-import Image from "next/image";
-import { redirect } from "next/navigation";
+import { notFound } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
-import VapiControls from "@/components/VapiControls";
+import ChatInterface from "@/components/ChatInterface";
 
-export default async function BookDetailsPage({ params }: { params: { slug: string } }) {
-  // Fetch the specific book using the URL parameter
-  const result = await getBookBySlug(params.slug);
+// Forces the page to always fetch the freshest data from MongoDB
+export const dynamic = "force-dynamic";
 
-  // If the book doesn't exist, kick the user back to the homepage
-  if (!result.success || !result.data) {
-    redirect("/");
+interface PageProps {
+  params: Promise<{ slug: string }>;
+}
+
+export default async function BookChatPage({ params }: PageProps) {
+  // 1. Await the params (Required in Next.js 15+)
+  const { slug } = await params;
+  
+  // 2. Fetch the book from your database
+  const book = await getBookBySlug(slug);
+
+  // 3. If no book exists, show the 404 page
+  if (!book) {
+    return notFound();
   }
 
-  const book = result.data;
-
   return (
-    <main className="min-h-screen bg-[#fdfbf7]">
-      <Navbar />
-      
-      <div className="pt-28 wrapper max-w-4xl pb-12">
-        <Link href="/" className="text-sm font-medium text-gray-500 hover:text-black mb-6 inline-block transition-colors">
-          &larr; Back to Library
-        </Link>
-
-        {/* Header Card: Book Info */}
-        <section className="bg-white rounded-xl p-8 shadow-sm border border-gray-100 flex flex-col sm:flex-row gap-8 items-start mb-8">
-          <div className="relative w-32 h-48 rounded-md overflow-hidden shadow-sm shrink-0 bg-gray-100">
-            <Image
-              src={book.coverUrl || '/assets/book-cover.svg'}
-              alt={book.title}
-              fill
-              className="object-cover"
-            />
+    <div className="flex flex-col h-screen bg-white overflow-hidden">
+      {/* --- HEADER --- */}
+      <header className="h-16 border-b flex items-center justify-between px-6 bg-white shrink-0 shadow-sm z-10">
+        <div className="flex items-center gap-4">
+          <Link 
+            href="/" 
+            className="p-2 rounded-full hover:bg-gray-100 text-gray-500 transition-all active:scale-90"
+          >
+            <ArrowLeft size={20} />
+          </Link>
+          <div className="flex flex-col">
+            <h1 className="font-bold text-gray-900 leading-none truncate max-w-[200px] md:max-w-md">
+              {book.title}
+            </h1>
+            <span className="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">
+              AI Reading Assistant
+            </span>
           </div>
-          <div className="flex flex-col gap-3 pt-2">
-            <h1 className="text-3xl font-bold font-serif text-gray-900">{book.title}</h1>
-            <p className="text-gray-600 text-lg">by {book.author}</p>
-            <div className="flex gap-3 mt-4">
-              <span className="bg-gray-100 px-4 py-1.5 rounded-full text-xs font-semibold text-gray-700 tracking-wide uppercase">
-                Voice: {book.persona || 'Rachel'}
-              </span>
-              <span className="bg-gray-100 px-4 py-1.5 rounded-full text-xs font-semibold text-gray-700 tracking-wide uppercase">
-                Ready to talk
-              </span>
-            </div>
+        </div>
+      </header>
+
+      {/* --- MAIN WORKSPACE --- */}
+      <div className="flex flex-1 overflow-hidden bg-gray-50">
+        
+        {/* LEFT PANEL: PDF VIEWER (Visible on tablets and laptops) */}
+        <section className="hidden lg:block w-3/5 p-4 h-full">
+          <div className="w-full h-full bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+            <iframe 
+              src={`${book.fileURL}#view=FitH`} 
+              className="w-full h-full"
+              title={book.title}
+            />
           </div>
         </section>
 
-        {/* Vapi Controls Interactive UI */}
-        <VapiControls book={book} />
-        
+        {/* RIGHT PANEL: AI CHATBOX */}
+        <section className="w-full lg:w-2/5 flex flex-col bg-white lg:shadow-[-10px_0_30px_rgba(0,0,0,0.03)]">
+          {/* This component handles all the AI logic. 
+              We pass the title and author so Gemini knows what it's talking about.
+          */}
+          <ChatInterface 
+            bookTitle={book.title} 
+            bookAuthor={book.author} 
+          />
+        </section>
+
       </div>
-    </main>
+    </div>
   );
 }

@@ -1,120 +1,61 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
-import { toast } from "sonner";
 import { upload } from "@vercel/blob/client";
 import { createBook } from "@/lib/actions/book.actions";
-
-const formSchema = z.object({
-  title: z.string().min(2, "Title is required"),
-  author: z.string().min(2, "Author is required"),
-});
+import { toast } from "sonner";
 
 export default function UploadForm() {
   const router = useRouter();
-  const { user, isLoaded } = useUser();
-  const [isUploading, setIsUploading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const { user } = useUser();
+  const [loading, setLoading] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
 
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: { title: "", author: "" },
-  });
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    const title = formData.get("title") as string;
+    const author = formData.get("author") as string;
 
-  async function onSubmit(values: z.infer<typeof formSchema>) {
-    if (!isLoaded || !user) {
-      toast.error("Please log in to upload books.");
-      return;
-    }
-    if (!selectedFile) {
-      toast.error("Please select a PDF file.");
-      return;
-    }
-
-    setIsUploading(true);
-    toast.loading("Processing and saving your book...");
+    if (!file || !user) return toast.error("Missing file or user");
 
     try {
-      const blob = await upload(selectedFile.name, selectedFile, {
-        access: 'public',
-        handleUploadUrl: '/api/upload',
+      setLoading(true);
+      const blob = await upload(file.name, file, { 
+        access: 'public', 
+        handleUploadUrl: '/api/upload' 
       });
 
-      const bookData = {
+      const res = await createBook({
+        title,
+        author,
         clerkId: user.id,
-        title: values.title,
-        author: values.author,
-        persona: "Rachel",
-        fileUrl: blob.url,
+        fileURL: blob.url,
         fileBlobKey: blob.pathname,
-        fileSize: selectedFile.size,
-      };
+        fileSize: file.size,
+      });
 
-      const result = await createBook(bookData);
-
-      toast.dismiss();
-
-      if (result.success) {
-        toast.success("Book added successfully to your library!");
+      if (res.success) {
+        toast.success("Uploaded!");
         router.push("/");
-      } else {
-        toast.error(result.error);
-        
-        // THE REDIRECT: If they hit the limit, send them to the pricing page!
-        if (result.code === "LIMIT_REACHED") {
-          router.push("/subscriptions");
-        }
+        router.refresh();
       }
-      
-    } catch (error) {
-      console.error(error);
-      toast.dismiss();
-      toast.error("An error occurred during upload.");
+    } catch (err) {
+      toast.error("Upload failed");
     } finally {
-      setIsUploading(false);
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-4">
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">Book Title</label>
-        <input 
-          {...form.register("title")} 
-          className="w-full border border-gray-300 p-3 rounded-md focus:outline-none focus:ring-2 focus:ring-black" 
-          placeholder="e.g. Clean Code"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-gray-700">Author</label>
-        <input 
-          {...form.register("author")} 
-          className="w-full border border-gray-300 p-3 rounded-md focus:outline-none focus:ring-2 focus:ring-black" 
-          placeholder="e.g. Robert C. Martin"
-        />
-      </div>
-
-      <div className="space-y-2 border-2 border-dashed border-gray-300 rounded-md p-8 text-center bg-gray-50">
-        <input 
-          type="file" 
-          accept="application/pdf"
-          onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-          className="mx-auto block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-black file:text-white hover:file:bg-gray-800 cursor-pointer"
-        />
-      </div>
-
-      <button 
-        type="submit" 
-        disabled={isUploading}
-        className="w-full bg-black text-white py-3 rounded-md font-medium hover:bg-gray-800 transition disabled:opacity-50"
-      >
-        {isUploading ? "Uploading & Saving..." : "Begin Synthesis"}
+    <form onSubmit={handleSubmit} className="max-w-md mx-auto p-8 bg-white rounded-xl shadow-lg space-y-4">
+      <input name="title" placeholder="Book Title" required className="w-full p-2 border rounded" />
+      <input name="author" placeholder="Author" required className="w-full p-2 border rounded" />
+      <input type="file" accept=".pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} required className="w-full" />
+      <button disabled={loading} className="w-full bg-blue-600 text-white p-2 rounded disabled:bg-gray-400">
+        {loading ? "Uploading..." : "Upload Book"}
       </button>
     </form>
   );

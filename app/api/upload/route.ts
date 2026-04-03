@@ -1,33 +1,13 @@
-import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
-import { NextResponse } from 'next/server';import { auth } from '@clerk/nextjs/server';
+import { NextResponse } from 'next/server';
 
-export async function POST(request: Request): Promise<NextResponse> {
-  const body = (await request.json()) as HandleUploadBody;
-
+export async function POST(req: Request) {
   try {
-    const jsonResponse = await handleUpload({
-      body,
-      request,
-      onBeforeGenerateToken: async () => {
-        // Ensure the user is logged in before allowing them to upload
-        const { userId } = auth();
-        if (!userId) throw new Error('Unauthorized User');
-        
-        return {
-          allowedContentTypes: ['application/pdf'],
-          tokenPayload: JSON.stringify({ userId }),
-        };
-      },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        console.log('File successfully uploaded to Vercel Blob:', blob.url);
-      },
-    });
-
-    return NextResponse.json(jsonResponse);
+    const body = await req.json();
+    console.log("VAPI Search requested:", body);
+    
+    return NextResponse.json({ success: true, message: "Search active" }, { status: 200 });
   } catch (error) {
-    return NextResponse.json(
-      { error: (error as Error).message },
-      { status: 400 } 
-    );
+    console.error("VAPI API Error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

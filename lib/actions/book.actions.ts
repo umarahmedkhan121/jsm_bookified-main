@@ -2,85 +2,56 @@
 
 import { connectToDatabase } from "@/database/mongoose";
 import Book from "@/database/models/book.model";
-import BookSegment from "@/database/models/book-segment.model";
-import { getPlanLimits } from "../subscription.server";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
+const genAI = new GoogleGenerativeAI(apiKey || "");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const serializeData = (data: any) => JSON.parse(JSON.stringify(data));
+const serialize = (data: any) => (data ? JSON.parse(JSON.stringify(data)) : null);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createBook(bookData: any) { 
-  try {    
-    // 1. Get their plan limits
-    const limits = await getPlanLimits();
-    
-    // 2. Count how many books they already have
-    const userBookCount = await Book.countDocuments({ clerkId: bookData.clerkId });
-    
-    // 3. THE LOCK: Block them if they hit their limit!
-    if (userBookCount >= limits.maxBooks) {
-      return { 
-        success: false, 
-        error: "You have reached your plan's book upload limit.",
-        code: "LIMIT_REACHED" 
-      };
-    }
-
-    // 4. Generate a URL-friendly slug
-    const slug = bookData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now();
-    
-    // 5. Save the book
-    const newBook = await Book.create({ ...bookData, slug });
-    
-    return { success: true, data: serializeData(newBook) };
-  } catch (error) {
-    console.error("Error creating book:", error);
-    return { success: false, error: "Failed to create book in database." };
+export async function createBook(bookData: any) {
+  try {
+    await connectToDatabase();
+    const cleanTitle = bookData.title.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
+    const generatedSlug = `${cleanTitle}-${Date.now()}`;
+    const newBook = await Book.create({ ...bookData, slug: generatedSlug });
+    return serialize({ success: true, book: newBook });
+  } catch (error: any) {
+    return { success: false, error: error.message };
   }
 }
 
 export async function getAllBooks() {
   try {
     await connectToDatabase();
-    const books = await Book.find().sort({ createdAt: -1 }).lean();
-    return { success: true, data: serializeData(books) };
-  } catch (error) {
-    console.error("Error fetching books:", error);
-    return { success: false, data: [] };
+    const books = await Book.find().sort({ createdAt: -1 });
+    return serialize(books) || [];
+  } catch (_error) {
+    return [];
   }
 }
 
 export async function getBookBySlug(slug: string) {
+  if (!slug) return null;
   try {
     await connectToDatabase();
-    const book = await Book.findOne({ slug }).lean();
-    if (!book) return { success: false, error: "Book not found" };
-    return { success: true, data: serializeData(book) };
-  } catch (error) {
-    console.error("Error fetching single book:", error);
-    return { success: false, error: "Failed to fetch book details" };
+    const book = await Book.findOne({ slug });
+    return serialize(book);
+  } catch (_error) {
+    return null;
   }
 }
 
-export async function searchBookSegments(bookId: string, query: string) {
+export async function chatWithBook(userMessage: string, title: string, author: string) {
+  if (!userMessage.trim()) return "Please enter a question.";
   try {
-    await connectToDatabase();
-    let segments = await BookSegment.find(
-      { bookId, $text: { $search: query } },
-      { score: { $meta: "textScore" } }
-    ).sort({ score: { $meta: "textScore" } }).limit(3).lean();
-
-    if (!segments || segments.length === 0) {
-      if (query && query.length > 3) {
-        segments = await BookSegment.find({
-          bookId,
-          content: { $regex: query, $options: "i" }
-        }).limit(3).lean();
-      }
-    }
-    return { success: true, data: serializeData(segments) };
-  } catch (error) {
-    console.error("Error searching segments:", error);
-    return { success: false, error: "Failed to search book segments" };
+    const model = genAI.getGenerativeModel({ model: "gemini-3-flash" });
+    const prompt = `Context: Book "${title}" by "${author}". User Question: ${userMessage}`;
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (error: any) {
+    return `AI Error: ${error.message}`;
   }
 }

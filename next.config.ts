@@ -1,14 +1,9 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  images: {
-    remotePatterns: [
-      { protocol: 'https', hostname: 'covers.openlibrary.org' },
-      { protocol: 'https', hostname: '**.public.blob.vercel-storage.com' }
-    ]
-  },
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
-  }
+  },
 };
 
 export default nextConfig;
